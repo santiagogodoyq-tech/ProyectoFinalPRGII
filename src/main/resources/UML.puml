@@ -1,0 +1,417 @@
+
+@startuml EventosPro_UML
+
+skinparam classAttributeIconSize 0
+skinparam classFontSize 12
+skinparam groupInheritance 2
+
+' ═══════════════════════════════════════════
+' ENUMS
+' ═══════════════════════════════════════════
+package "Enums" {
+  enum EstadoAsiento { DISPONIBLE; RESERVADO; VENDIDO; BLOQUEADO}
+  enum EstadoCompra  { CREADA; PAGADA; CONFIRMADA; CANCELADA; REEMBOLSADA; INCIDENCIA }
+  enum EstadoEntrada { ACTIVA; USADA; ANULADA }
+  enum EstadoEvento  { BORRADOR; PUBLICADO; PAUSADO; CANCELADO; FINALIZADO }
+}
+
+' ═══════════════════════════════════════════
+' CLASES CLÁSICAS
+' ═══════════════════════════════════════════
+package "Clasicas" {
+
+  abstract class Usuario {
+    # idUsuario : String
+    # nombre : String
+    # correo : String
+    # telefono : String
+    # contrasena : String
+    + iniciarSesion() : void
+    + getRol() : String
+    + modificarPerfil(nombre, correo, telefono) : void
+  }
+
+  class Administrador {
+    + iniciarSesion() : void
+    + getRol() : String
+    + gestionarEventos() : void
+    + gestionarUsuarios() : void
+    + registrarIncidencia(i: Incidencia) : void
+  }
+
+  class UsuarioFinal {
+    - metodosPago : ArrayList<MetodoPago>
+    + iniciarSesion() : void
+    + getRol() : String
+    + agregarMetodoPago(mp: MetodoPago) : void
+    + getMetodosPago() : ArrayList<MetodoPago>
+  }
+
+  class Evento {
+    - idEvento : String
+    - nombre : String
+    - categoria : String
+    - descripcion : String
+    - ciudad : String
+    - fecha : LocalDateTime
+    - politicas : String
+    - estado : EstadoEvento
+    + publicar() : void
+    + pausar() : void
+    + cancelar() : void
+    + agregarObservador(obs: ObserverEstado) : void
+  }
+
+  class Recinto {
+    - idRecinto : String
+    - nombre : String
+    - direccion : String
+    - ciudad : String
+    + agregarZona(z: Zona) : void
+    + eliminarZona(id: String) : void
+    + getZonas() : ArrayList<Zona>
+  }
+
+  class Zona {
+    - idZona : String
+    - nombre : String
+    - capacidad : int
+    + agregarAsiento(a: Asiento) : void
+    + consultarOcupacion() : int
+    + consultarDisponibilidad() : int
+    + getAsientos() : ArrayList<Asiento>
+  }
+
+  class Asiento {
+    - idAsiento : String
+    - fila : String
+    - numero : int
+    - sector : String
+    - tipoZona : String
+    - precioPersonalizado : double
+    - estado : EstadoAsiento
+    + cambiarEstado(e: EstadoAsiento) : void
+    + getPrecioSegunTipo() : double
+    + setPrecio(p: double) : void
+  }
+
+  class Compra {
+    - idCompra : String
+    - fecha : LocalDateTime
+    - total : double
+    - estado : EstadoCompra
+    - conMerchandising : boolean
+    - conSeguro : boolean
+    - conParqueadero : boolean
+    + pagar(datos: Object) : void
+    + cancelar() : void
+    + reembolsar() : void
+    + agregarEntrada(e: Entrada) : void
+    + guardarServicios(merch, seguro, parqueo) : void
+    + agregarObservador(obs: ObserverEstado) : void
+  }
+
+  class Entrada {
+    - idEntrada : String
+    - precioFinal : double
+    - estado : EstadoEntrada
+    + generarQR() : String
+    + anular() : void
+    + getPrecioFinal() : double
+  }
+
+  class Pago {
+    - idPago : String
+    - monto : double
+    - fecha : LocalDateTime
+    - referencia : String
+    + confirmar() : void
+    + anular() : void
+  }
+
+  class Incidencia {
+    - idIncidencia : String
+    - tipo : String
+    - descripcion : String
+    - fecha : LocalDateTime
+    - entidadAfectada : String
+  }
+}
+
+' ═══════════════════════════════════════════
+' CLASES DE SOPORTE
+' ═══════════════════════════════════════════
+package "Soporte" {
+  class MetodoPago {
+    - idMetodo : String
+    - tipo : String
+    - detalle : String
+  }
+
+  class PrecioEntrada {
+    - precioBase : double
+    - impuesto : double
+    - comision : double
+    + calcularTotal() : double
+  }
+
+  class ResultadoCompra {
+    - exitoso : boolean
+    - mensaje : String
+    + isExitoso() : boolean
+    + getCompra() : Compra
+  }
+
+  class ResultadoPago {
+    - exitoso : boolean
+    - referencia : String
+    - mensaje : String
+    + isExitoso() : boolean
+    + getReferencia() : String
+  }
+
+  class ServicioMetricas {
+    + registrarEvento(entidad, id, ant, nuevo) : void
+    + consultarTasaCancelacion() : double
+    + consultarTopEventos() : List<String>
+  }
+
+  class ServicioCorreo {
+    + {static} notificarConfirmacionCompra(c: Compra) : void
+    + {static} notificarCancelacionEvento(e: Evento, compras) : void
+    + {static} notificarReembolso(c: Compra, monto) : void
+  }
+
+  class ReporteServicio {
+    + {static} exportarCSV(compras, owner) : void
+    + {static} exportarPDF(compras, owner) : void
+  }
+}
+
+' ═══════════════════════════════════════════
+' PATRÓN OBSERVER
+' ═══════════════════════════════════════════
+package "Observer" {
+  interface ObserverEstado {
+    + actualizar(entidad, id, anterior, nuevo) : void
+  }
+  class ObserverNotificacion { + actualizar(...) : void }
+  class ObserverMetrica      { + actualizar(...) : void }
+  class ObserverIncidencia   { + actualizar(...) : void }
+}
+
+' ═══════════════════════════════════════════
+' PATRÓN STATE
+' ═══════════════════════════════════════════
+package "State" {
+  interface StateCompra {
+    + pagar(compra, datos) : void
+    + cancelar(compra) : void
+    + reembolsar(compra) : void
+  }
+  class StateCreado     { + pagar(...); cancelar(...); reembolsar(...) }
+  class StatePagado     { + pagar(...); cancelar(...); reembolsar(...) }
+  class StateCancelado  { + pagar(...); cancelar(...); reembolsar(...) }
+  class StateReembolsada{ + pagar(...); cancelar(...); reembolsar(...) }
+}
+
+' ═══════════════════════════════════════════
+' PATRÓN STRATEGY
+' ═══════════════════════════════════════════
+package "Strategy" {
+  interface PagoStrategy {
+    + procesar(monto, datos) : ResultadoPago
+  }
+  class PagoTarjetaStrategy { + procesar(...) : ResultadoPago }
+  class PagoPSEStrategy     { + procesar(...) : ResultadoPago }
+  class PagoEfectivoStrategy{ + procesar(...) : ResultadoPago }
+
+  interface CancelacionStrategy {
+    + calcularReembolso(compra, ahora) : double
+  }
+  class CancelacionAnticipadaStrategy { + calcularReembolso(...) : double }
+  class CancelacionTardiaStrategy     { + calcularReembolso(...) : double }
+
+  interface "FiltroStrategy<T>" as FiltroStrategy {
+    + filtrar(lista) : List<T>
+  }
+  class FiltroEstadoStrategy { + filtrar(...) : List<Compra> }
+  class FiltroFechaStrategy  { + filtrar(...) : List<Compra> }
+}
+
+' ═══════════════════════════════════════════
+' PATRÓN BUILDER
+' ═══════════════════════════════════════════
+package "Builder" {
+  class CompraBuilder {
+    + conUsuario(u: UsuarioFinal) : CompraBuilder
+    + conEvento(e: Evento) : CompraBuilder
+    + conEntrada(e: Entrada) : CompraBuilder
+    + conEstrategiaPago(s: PagoStrategy) : CompraBuilder
+    + conObservador(o: ObserverEstado) : CompraBuilder
+    + build() : Compra
+  }
+}
+
+' ═══════════════════════════════════════════
+' PATRÓN FACTORY METHOD
+' ═══════════════════════════════════════════
+package "FactoryMethod" {
+  abstract class FactoryEntrada {
+    + {abstract} crearEntrada(zona, asiento) : Entrada
+    + procesarEntrada(compra, zona, asiento) : Entrada
+  }
+  class FactoryEntradaGeneral      { + crearEntrada(...) : Entrada }
+  class FactoryEntradaPreferencial { + crearEntrada(...) : Entrada }
+  class FactoryEntradaVip          { + crearEntrada(...) : Entrada }
+}
+
+' ═══════════════════════════════════════════
+' PATRÓN SINGLETON
+' ═══════════════════════════════════════════
+package "Singleton" {
+  class GestorDisponibilidad {
+    - {static} instancia : GestorDisponibilidad
+    - mapaAsientos : Map<String, Asiento>
+    + {static} getInstancia() : GestorDisponibilidad
+    + registrarAsiento(a: Asiento) : void
+    + reservar(id: String) : boolean
+    + liberar(id: String) : void
+  }
+}
+
+' ═══════════════════════════════════════════
+' PATRÓN DECORATOR
+' ═══════════════════════════════════════════
+package "Decorator" {
+  interface EntradaServicioDecorator {
+    + calcularPrecio() : double
+    + describir() : String
+  }
+  abstract class ServicioDecorator {
+    # entrada : EntradaServicioDecorator
+    + calcularPrecio() : double
+    + describir() : String
+  }
+  class EntradaBaseDecorator    { + calcularPrecio(); describir() }
+  class MerchandisingDecorator  { + calcularPrecio(); describir() }
+  class SeguroCanceladorDecorator{ + calcularPrecio(); describir() }
+  class ParqueaderoDecorator    { + calcularPrecio(); describir() }
+}
+
+' ═══════════════════════════════════════════
+' PATRÓN ADAPTER
+' ═══════════════════════════════════════════
+package "Adapter" {
+  interface AdapterGenerador {
+    + exportar(datos, ruta) : void
+  }
+  class AdapterPDFBox { + exportar(...) : void }
+  class AdapterPOI    { + exportar(...) : void }
+}
+
+' ═══════════════════════════════════════════
+' PATRÓN FACADE
+' ═══════════════════════════════════════════
+package "Facade" {
+  class ServicioCompraFacade {
+    + confirmarCompra(usuario, evento, zona, asiento, mp) : ResultadoCompra
+    + cancelarCompra(idCompra: String) : void
+    + consultarCompra(idCompra: String) : Compra
+  }
+}
+
+' ═══════════════════════════════════════════
+' PATRÓN PROXY
+' ═══════════════════════════════════════════
+package "Proxy" {
+  class ProxyAcceso {
+    - {static} instancia : ProxyAcceso
+    - sesionActual : Usuario
+    + {static} getInstancia() : ProxyAcceso
+    + login(correo, contrasena) : Optional<Usuario>
+    + logout() : void
+    + hayAdmin() : boolean
+  }
+}
+
+' ═══════════════════════════════════════════
+' RELACIONES DE HERENCIA / IMPLEMENTACIÓN
+' ═══════════════════════════════════════════
+Usuario <|-- Administrador
+Usuario <|-- UsuarioFinal
+
+StateCompra <|.. StateCreado
+StateCompra <|.. StatePagado
+StateCompra <|.. StateCancelado
+StateCompra <|.. StateReembolsada
+
+PagoStrategy <|.. PagoTarjetaStrategy
+PagoStrategy <|.. PagoPSEStrategy
+PagoStrategy <|.. PagoEfectivoStrategy
+
+CancelacionStrategy <|.. CancelacionAnticipadaStrategy
+CancelacionStrategy <|.. CancelacionTardiaStrategy
+
+FiltroStrategy <|.. FiltroEstadoStrategy
+FiltroStrategy <|.. FiltroFechaStrategy
+
+FactoryEntrada <|-- FactoryEntradaGeneral
+FactoryEntrada <|-- FactoryEntradaPreferencial
+FactoryEntrada <|-- FactoryEntradaVip
+
+ObserverEstado <|.. ObserverNotificacion
+ObserverEstado <|.. ObserverMetrica
+ObserverEstado <|.. ObserverIncidencia
+
+EntradaServicioDecorator <|.. EntradaBaseDecorator
+EntradaServicioDecorator <|.. ServicioDecorator
+ServicioDecorator <|-- MerchandisingDecorator
+ServicioDecorator <|-- SeguroCanceladorDecorator
+ServicioDecorator <|-- ParqueaderoDecorator
+
+AdapterGenerador <|.. AdapterPDFBox
+AdapterGenerador <|.. AdapterPOI
+
+' ═══════════════════════════════════════════
+' RELACIONES DE COMPOSICIÓN / ASOCIACIÓN
+' ═══════════════════════════════════════════
+Evento "1" *-- "1" Recinto
+Recinto "1" *-- "1..*" Zona
+Zona "1" *-- "0..*" Asiento
+
+Compra "1" *-- "1..*" Entrada
+Compra "1" o-- "1" Evento
+Compra "1" o-- "1" UsuarioFinal
+Compra "0..1" o-- "0..1" Pago
+Compra --> StateCompra
+Compra --> PagoStrategy
+Compra --> CancelacionStrategy
+Compra --> ObserverEstado
+
+Entrada "1" o-- "1" Zona
+Entrada "1" o-- "1" Asiento
+Entrada "1" *-- "1" PrecioEntrada
+
+Incidencia o-- Evento
+Incidencia o-- Compra
+
+UsuarioFinal "1" *-- "0..*" MetodoPago
+Pago "1" o-- "1" MetodoPago
+
+CompraBuilder ..> Compra : <<crea>>
+CompraBuilder ..> StateCreado : <<usa>>
+
+ServicioCompraFacade --> GestorDisponibilidad
+ServicioCompraFacade --> FactoryEntrada
+ServicioCompraFacade --> CompraBuilder
+ServicioCompraFacade --> PagoStrategy
+
+ObserverMetrica --> ServicioMetricas
+ObserverNotificacion --> ServicioCorreo
+
+ProxyAcceso --> Usuario
+
+ResultadoCompra o-- Compra
+
+@enduml
