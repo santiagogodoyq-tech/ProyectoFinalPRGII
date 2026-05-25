@@ -1,1 +1,570 @@
+Sara Benjumea Gallego 
+Santiago Godoy Quitian
+PROYECTO FINAL – PRGII
+Plataforma de Gestión de Eventos y Venta de Entradas
+EVENTOSPRO
+Universidad del Quindío  ·  Programación II
+2026-1
+1. Integrantes del Grupo
+
+Nombre Completo
+Rol
+Sara Benjumea Gallego
+Desarrolladora
+Santiago Godoy Quitian
+Desarrollador
+
+
+2. Descripción del Proyecto
+
+El proyecto consiste en una plataforma de gestión de eventos y venta de entradas desarrollada en Java con JavaFX. Permite a usuarios finales explorar eventos (conciertos, teatro, conferencias), seleccionar zonas y asientos, comprar entradas, agregar servicios adicionales (acceso VIP, seguro, merchandising, parqueadero), realizar pagos simulados y recibir notificaciones por correo sobre cambios de estado.
+La plataforma cuenta con dos perfiles: Usuario Final, que puede explorar eventos, gestionar sus compras y descargar reportes en CSV/PDF; y Administrador, que gestiona el catálogo de eventos, recintos, zonas, asientos, registra incidencias y visualiza métricas de ventas mediante gráficas JavaFX Charts.
+La arquitectura aplica extensamente patrones de diseño creacionales, estructurales y de comportamiento, así como los cinco principios SOLID, garantizando un código extensible, mantenible y desacoplado.
+
+3. Instrucciones para Compilar y Ejecutar
+
+3.1 Requisitos Previos
+Antes de compilar y ejecutar la aplicación, asegúrese de tener instalado:
+Java 21 o superior (JDK 21+)
+Apache Maven 3.8+ (o usar el wrapper incluido ./mvnw)
+IntelliJ IDEA (recomendado) u otro IDE con soporte para JavaFX 21
+Conexión a Internet (para descargar dependencias Maven la primera vez)
+
+3.2 Pasos para Compilar y Ejecutar
+Opción A – Desde la terminal (Maven Wrapper):
+# 1. Descomprimir el proyecto y entrar al directorio
+cd ProyectoFinalPRGII
+
+# 2. Compilar el proyecto
+./mvnw clean compile          # Linux / macOS
+mvnw.cmd clean compile        # Windows
+
+# 3. Ejecutar la aplicación
+./mvnw javafx:run             # Linux / macOS
+mvnw.cmd javafx:run           # Windows
+
+Opción B – Desde IntelliJ IDEA:
+1. Abrir IntelliJ IDEA y seleccionar File > Open, apuntando a la carpeta ProyectoFinalPRGII.
+2. IntelliJ detectará automáticamente el pom.xml y descargará las dependencias.
+3. Ejecutar la clase co.edu.uniquindio.poo.proyectofinalprgii.Application.FXApplication como clase principal, o usar la configuración Maven javafx:run.
+
+3.3 Credenciales de Prueba
+Perfil
+Credenciales (correo / contraseña)
+Administrador
+admin@eventos.com / admin123
+Usuario Final
+usuario1@test.com / pass123 (datos semilla en DataStore)
+
+
+3.4 Dependencias Principales
+Dependencia
+Versión / Propósito
+JavaFX Controls / FXML
+21.0.6 – Interfaz gráfica
+ControlsFX
+11.2.1 – Componentes UI adicionales
+Apache PDFBox
+3.0.x – Exportación de reportes PDF
+Apache POI
+5.x – Exportación de reportes CSV/Excel
+Jakarta Mail
+2.0.1 – Envío de correos SMTP
+JUnit 5
+5.12.1 – Pruebas unitarias
+
+
+4. Patrones de Diseño Implementados
+
+El proyecto implementa mínimo 9 patrones de diseño: 3 creacionales, 3 estructurales y 3 de comportamiento. A continuación se detalla cada uno con su requisito, problema, propósito, solución y fragmento de código representativo.
+
+4.1 Patrones Creacionales
+
+4.1.1. Patrón Creacional: Singleton
+
+Aspecto
+Descripción
+Requisito que resuelve
+RF-015 / RF-025 – Gestionar disponibilidad de asientos: habilitar, bloquear, liberar y consultar en tiempo real. Solo debe existir un punto de control centralizado.
+Problema
+Si múltiples partes de la aplicación crean instancias independientes del gestor de disponibilidad, se producen inconsistencias: un asiento podría reservarse dos veces o liberarse incorrectamente.
+Propósito
+Garantizar que GestorDisponibilidad sea la única instancia global que controla el mapa de asientos, evitando estados inconsistentes.
+Solución
+La clase GestorDisponibilidad usa un constructor privado y el método estático sincronizado getInstancia(). Toda reserva y liberación de asientos pasa por esta instancia única, asegurando coherencia en tiempo de ejecución.
+
+
+Fragmento de código representativo:
+public class GestorDisponibilidad {
+    private static GestorDisponibilidad instancia;
+    private final Map<String, Asiento> mapaAsientos;
+
+    private GestorDisponibilidad() {
+        this.mapaAsientos = new HashMap<>();
+    }
+
+    public static synchronized GestorDisponibilidad getInstancia() {
+        if (instancia == null) instancia = new GestorDisponibilidad();
+        return instancia;
+    }
+
+    public boolean reservar(String idAsiento) {
+        Asiento a = mapaAsientos.get(idAsiento);
+        if (a != null && a.getEstado() == EstadoAsiento.DISPONIBLE) {
+            a.cambiarEstado(EstadoAsiento.RESERVADO);
+            return true;
+        }
+        return false;
+    }
+}
+
+4.1.2. Patrón Creacional: Builder
+
+Aspecto
+Descripción
+Requisito que resuelve
+RF-006 / RF-034 / RF-035 – Crear y modificar compras antes de confirmar el pago. Una compra puede llevar distintas combinaciones de entradas, estrategias de pago, cancelación y observadores.
+Problema
+El constructor de Compra tiene múltiples parámetros opcionales (entradas, pago, estrategias, observadores). Usar un solo constructor con todos los parámetros es propenso a errores y difícil de leer.
+Propósito
+Separar la construcción de un objeto complejo de su representación, permitiendo crear compras paso a paso con solo los componentes necesarios.
+Solución
+CompraBuilder expone métodos fluidos (conUsuario, conEvento, conEntrada, conEstrategiaPago…). El método build() valida que usuario y evento no sean nulos, genera el ID único y entrega la Compra lista con estado inicial StateCreado.
+
+
+Fragmento de código representativo:
+public class CompraBuilder {
+    private UsuarioFinal usuario;
+    private Evento evento;
+    private final ArrayList<Entrada> entradas = new ArrayList<>();
+    private PagoStrategy estrategiaPago;
+
+    public CompraBuilder conUsuario(UsuarioFinal u) { this.usuario = u; return this; }
+    public CompraBuilder conEvento(Evento e)         { this.evento  = e; return this; }
+    public CompraBuilder conEntrada(Entrada e)       { entradas.add(e); return this; }
+    public CompraBuilder conEstrategiaPago(PagoStrategy p) {
+        this.estrategiaPago = p; return this;
+    }
+
+    public Compra build() {
+        if (usuario == null || evento == null)
+            throw new IllegalStateException("Usuario y Evento son obligatorios.");
+        String id = "COMP-" + UUID.randomUUID().toString().substring(0,8).toUpperCase();
+        Compra c = new Compra(id, LocalDateTime.now(), evento, usuario);
+        entradas.forEach(c::agregarEntrada);
+        c.setEstrategiaPago(estrategiaPago);
+        c.setEstadoHandler(new StateCreado());
+        return c;
+    }
+}
+
+4.1.3. Patrón Creacional: Factory Method
+
+Aspecto
+Descripción
+Requisito que resuelve
+RF-005 / RF-038 – Seleccionar entradas por zona (VIP, Preferencial, General) y generar tickets con precios diferenciados según la zona seleccionada.
+Problema
+Cada tipo de zona implica una lógica de precio distinta. Instanciar Entrada directamente en el código cliente duplica la lógica de precio y viola el principio de abierto/cerrado.
+Propósito
+Delegar la creación de Entradas a subclases especializadas, permitiendo añadir nuevos tipos de zona sin modificar el código cliente.
+Solución
+FactoryEntrada es una clase abstracta con el método crearEntrada(). Las subclases FactoryEntradaVip, FactoryEntradaPreferencial y FactoryEntradaGeneral implementan la creación concreta con su propio PrecioEntrada.
+
+
+Fragmento de código representativo:
+// Clase abstracta
+public abstract class FactoryEntrada {
+    public abstract Entrada crearEntrada(Zona zona, Asiento asiento);
+
+    public Entrada procesarEntrada(Compra compra, Zona z, Asiento a) {
+        Entrada e = crearEntrada(z, a);
+        compra.agregarEntrada(e);
+        return e;
+    }
+}
+
+// Implementación concreta VIP
+public class FactoryEntradaVip extends FactoryEntrada {
+    @Override
+    public Entrada crearEntrada(Zona zona, Asiento asiento) {
+        PrecioEntrada precio = new PrecioEntrada(200_000, 36_000, 10_000);
+        return new Entrada("ENT-VIP-" + UUID.randomUUID()..., zona, asiento, precio);
+    }
+}
+
+4.2 Patrones Estructurales
+
+4.2.1. Patrón Estructural: Decorator
+
+Aspecto
+Descripción
+Requisito que resuelve
+RF-009 – Agregar servicios adicionales a la compra (VIP, seguro de cancelación, merchandising, parqueadero, acceso preferencial) de forma dinámica y combinable.
+Problema
+Crear una subclase de Entrada por cada combinación de servicios adicionales produce una explosión combinatoria de clases imposible de mantener.
+Propósito
+Añadir responsabilidades adicionales a un objeto de forma dinámica, sin modificar su clase, envolviendo el objeto en decoradores.
+Solución
+La interfaz EntradaServicioDecorator define calcularPrecio() y describir(). EntradaBaseDecorator implementa la entrada base; cada servicio (MerchandisingDecorator, SeguroCanceladorDecorator, ParqueaderoDecorator) extiende ServicioDecorator y suma su precio al calcularPrecio() del envuelto.
+
+
+Fragmento de código representativo:
+// Interfaz base
+public interface EntradaServicioDecorator {
+    double calcularPrecio();
+    String describir();
+}
+
+// Decorador abstracto
+public abstract class ServicioDecorator implements EntradaServicioDecorator {
+    protected final EntradaServicioDecorator entrada;
+    protected ServicioDecorator(EntradaServicioDecorator e) { this.entrada = e; }
+    public double calcularPrecio() { return entrada.calcularPrecio(); }
+}
+
+// Uso en cliente
+EntradaServicioDecorator e = new EntradaBaseDecorator(zona, 150_000);
+e = new MerchandisingDecorator(e);   // +25 000
+e = new SeguroCanceladorDecorator(e); // +18 000
+System.out.println(e.calcularPrecio()); // 193 000
+
+4.2.2. Patrón Estructural: Adapter
+
+Aspecto
+Descripción
+Requisito que resuelve
+RF-011 / RF-046 – Exportar reportes en CSV (Apache POI) y PDF (Apache PDFBox). La aplicación no debe depender directamente de ninguna librería concreta de exportación.
+Problema
+Las APIs de PDFBox y POI son completamente distintas. El código de reportes dependería de detalles de implementación de cada librería, dificultando cambiar o añadir nuevos formatos.
+Propósito
+Adaptar interfaces incompatibles bajo una interfaz común, permitiendo al cliente tratar cualquier formato de exportación de manera uniforme.
+Solución
+La interfaz AdapterGenerador declara exportar(datos, ruta). AdapterPDFBox y AdapterPOI implementan esta interfaz adaptando las llamadas a sus respectivas APIs. El servicio de reportes solo conoce AdapterGenerador.
+
+
+Fragmento de código representativo:
+// Interfaz común (Target)
+public interface AdapterGenerador {
+    void exportar(List<Map<String, Object>> datos, String ruta);
+}
+
+// Adapter para PDFBox
+public class AdapterPDFBox implements AdapterGenerador {
+    @Override
+    public void exportar(List<Map<String, Object>> datos, String ruta) {
+        // Lógica de PDFBox: crear PDDocument, añadir páginas y guardar
+        System.out.println("[PDF] Exportando " + datos.size() + " registros → " + ruta);
+    }
+}
+
+// Adapter para Apache POI (CSV/Excel)
+public class AdapterPOI implements AdapterGenerador {
+    @Override
+    public void exportar(List<Map<String, Object>> datos, String ruta) {
+        // Lógica de POI: crear Workbook, llenar filas y guardar
+        System.out.println("[CSV] Exportando " + datos.size() + " registros → " + ruta);
+    }
+}
+
+4.2.3. Patrón Estructural: Facade
+
+Aspecto
+Descripción
+Requisito que resuelve
+RF-006 / RF-007 / RF-034 / RF-038 – El flujo de confirmación de compra involucra: verificar disponibilidad (Singleton), crear entradas (Factory Method), construir la compra (Builder) y registrar observadores (Observer).
+Problema
+La interfaz de usuario necesitaría conocer y coordinar múltiples subsistemas (GestorDisponibilidad, FactoryEntrada, CompraBuilder, observadores), creando un alto acoplamiento.
+Propósito
+Proporcionar una interfaz simplificada a un subsistema complejo, desacoplando la UI de los detalles de implementación.
+Solución
+ServicioCompraFacade recibe los colaboradores por constructor (DIP) y expone el método confirmarCompra(). Internamente coordina el Singleton, Factory y Builder en el orden correcto, devolviendo un ResultadoCompra.
+
+
+Fragmento de código representativo:
+public class ServicioCompraFacade {
+    private final GestorDisponibilidad disponibilidad;
+    private final PagoStrategy estrategiaPago;
+    private final FactoryEntrada creadorEntrada;
+
+    public ServicioCompraFacade(PagoStrategy pago,
+                                FactoryEntrada factory,
+                                ArrayList<ObserverEstado> obs) {
+        this.disponibilidad = GestorDisponibilidad.getInstancia();
+        this.estrategiaPago = pago;
+        this.creadorEntrada = factory;
+    }
+
+    public ResultadoCompra confirmarCompra(UsuarioFinal u, Evento ev,
+                                           Zona z, Asiento a, MetodoPago mp) {
+        if (!disponibilidad.reservar(a.getIdAsiento()))
+            return new ResultadoCompra(false, null, "Asiento no disponible.");
+        Entrada entrada = creadorEntrada.crearEntrada(z, a);
+        Compra compra = new CompraBuilder().conUsuario(u).conEvento(ev)
+                          .conEntrada(entrada).conEstrategiaPago(estrategiaPago).build();
+        return new ResultadoCompra(true, compra, "Compra creada exitosamente.");
+    }
+}
+
+4.2.4. Patrón Estructural: Proxy
+
+Aspecto
+Descripción
+Requisito que resuelve
+RF-001 – Registrarse e iniciar sesión. El sistema debe autenticar al usuario antes de permitir el acceso a las funcionalidades protegidas.
+Problema
+Acceder directamente a la fuente de datos de usuarios sin control de autenticación permitiría uso no autorizado de las funcionalidades de la plataforma.
+Propósito
+Proporcionar un sustituto que controle el acceso al objeto real, añadiendo lógica de autenticación y autorización transparente.
+Solución
+ProxyAcceso es un Singleton que intercepta el login: busca en admins y usuarios del DataStore, autentica con correo+contraseña, registra el evento en el log y devuelve Optional<Usuario> para manejar el caso de credenciales inválidas.
+
+
+Fragmento de código representativo:
+public class ProxyAcceso {
+    private static ProxyAcceso instancia;
+    private Usuario sesionActual;
+
+    private ProxyAcceso() {}
+    public static ProxyAcceso getInstancia() {
+        if (instancia == null) instancia = new ProxyAcceso();
+        return instancia;
+    }
+
+    public Optional<Usuario> login(String correo, String contrasena) {
+        DataStore ds = DataStore.get();
+        Optional<Administrador> admin = ds.admins.stream()
+            .filter(a -> a.getCorreo().equalsIgnoreCase(correo)
+                      && a.getContrasena().equals(contrasena)).findFirst();
+        if (admin.isPresent()) {
+            sesionActual = admin.get();
+            sesionActual.iniciarSesion();
+            return Optional.of(sesionActual);
+        }
+        // ... búsqueda en usuarios finales
+        return Optional.empty();
+    }
+}
+
+4.3 Patrones de Comportamiento
+
+4.3.1. Patrón Comportamiento: Strategy
+
+Aspecto
+Descripción
+Requisito que resuelve
+RF-007 – Pagar la compra usando distintos métodos de pago (tarjeta de crédito, PSE, efectivo). RF-006 / RF-036 – Cancelar compras según distintas políticas (anticipada, tardía).
+Problema
+Implementar la lógica de cada método de pago y cada política de cancelación en la clase Compra con condicionales if/else la hace inmanejable y viola el principio abierto/cerrado.
+Propósito
+Definir una familia de algoritmos, encapsular cada uno e intercambiarlos de forma transparente en tiempo de ejecución.
+Solución
+Las interfaces PagoStrategy y CancelacionStrategy declaran el contrato. PagoTarjetaStrategy, PagoPSEStrategy, PagoEfectivoStrategy implementan PagoStrategy. La Compra delega el procesamiento a la estrategia inyectada.
+
+
+Fragmento de código representativo:
+// Interfaz de estrategia de pago
+public interface PagoStrategy {
+    ResultadoPago procesar(double monto, Object datos);
+}
+
+// Implementación concreta: pago con tarjeta
+public class PagoTarjetaStrategy implements PagoStrategy {
+    @Override
+    public ResultadoPago procesar(double monto, Object datos) {
+        System.out.printf("Procesando tarjeta: $%.2f%n", monto);
+        return new ResultadoPago(true,
+            "TC-" + UUID.randomUUID().toString().substring(0,8).toUpperCase(),
+            "Pago aprobado");
+    }
+}
+
+// Inyección en la Compra vía Builder
+Compra compra = new CompraBuilder()
+    .conEstrategiaPago(new PagoTarjetaStrategy())
+    .build();
+compra.pagar(datos); // delega a la estrategia
+
+4.3.2. Patrón Comportamiento: State
+
+Aspecto
+Descripción
+Requisito que resuelve
+RF-008 / RF-036 – Visualizar y gestionar el estado de la compra: Creada → Pagada → Confirmada → Cancelada → Reembolsada. Cada estado habilita o prohíbe operaciones distintas.
+Problema
+Controlar las transiciones de estado con múltiples if/else o switch dentro de Compra produce código frágil: agregar un nuevo estado requiere modificar todos los métodos.
+Propósito
+Permitir que un objeto cambie su comportamiento cuando cambia su estado interno, encapsulando cada estado en una clase separada.
+Solución
+La interfaz StateCompra declara pagar(), cancelar() y reembolsar(). Cada estado concreto (StateCreado, StatePagado, StateCancelado, StateReembolsada) implementa las transiciones válidas y lanza mensajes de error para las inválidas.
+
+
+Fragmento de código representativo:
+// Interfaz de estado
+public interface StateCompra {
+    void pagar(Compra compra, Object datos);
+    void cancelar(Compra compra);
+    void reembolsar(Compra compra);
+}
+
+// Estado: CREADA
+public class StateCreado implements StateCompra {
+    @Override
+    public void pagar(Compra compra, Object datos) {
+        ResultadoPago r = compra.getEstrategiaPago().procesar(compra.getTotal(), datos);
+        if (r.isExitoso()) {
+            compra.setEstadoEnum(EstadoCompra.PAGADA);
+            compra.setEstadoHandler(new StatePagado()); // transición
+        }
+    }
+    @Override
+    public void cancelar(Compra compra) {
+        compra.setEstadoEnum(EstadoCompra.CANCELADA);
+        compra.setEstadoHandler(new StateCancelado());
+    }
+    @Override
+    public void reembolsar(Compra c) {
+        System.out.println("No se puede reembolsar: aún no pagada.");
+    }
+}
+
+4.3.3. Patrón Comportamiento: Observer
+
+Aspecto
+Descripción
+Requisito que resuelve
+RF-008 / RF-017 / RF-024 – Notificar automáticamente a los usuarios cuando cambia el estado de su compra o del evento. Registrar métricas e incidencias ante cualquier cambio de estado.
+Problema
+Si Compra y Evento notifican directamente a cada módulo dependiente (correo, métricas, logs, UI), el acoplamiento es total: añadir un nuevo suscriptor exige modificar las clases observadas.
+Propósito
+Definir una dependencia uno-a-muchos entre objetos para que cuando uno cambie de estado, sus dependientes sean notificados automáticamente.
+Solución
+La interfaz ObserverEstado declara actualizar(). Compra y Evento mantienen listas de observadores. Al cambiar estado se notifica a todos. ObserverNotificacion envía correos; ObserverMetrica actualiza estadísticas; ObserverIncidencia registra anomalías.
+
+
+Fragmento de código representativo:
+// Interfaz observador
+public interface ObserverEstado {
+    void actualizar(String entidad, String id,
+                    String estadoAnterior, String estadoNuevo);
+}
+
+// Observador concreto: envío de correos
+public class ObserverNotificacion implements ObserverEstado {
+    @Override
+    public void actualizar(String entidad, String id,
+                           String anterior, String nuevo) {
+        if (!"Evento".equals(entidad)) return;
+        DataStore ds = DataStore.instance;
+        ds.eventos.stream().filter(e -> e.getIdEvento().equals(id))
+            .findFirst().ifPresent(evento -> {
+                var compras = ds.compras.stream()
+                    .filter(c -> c.getEvento().getIdEvento().equals(id)).toList();
+                switch (nuevo) {
+                    case "CANCELADO" ->
+                        ServicioCorreo.notificarCancelacionEvento(evento, compras);
+                }
+            });
+    }
+}
+
+// Notificación desde el sujeto (Evento)
+// compra.notificarObservadores("Compra", id, anterior, nuevo);
+
+5. Principios SOLID Aplicados
+
+5.1 SRP – Principio de Responsabilidad Única
+Cada clase tiene una única razón para cambiar. El proyecto lo evidencia con clases especializadas para cada tarea:
+ServicioCorreo gestiona exclusivamente el envío de correos vía SMTP. ReporteServicio se ocupa solo de generar reportes. GestorDisponibilidad únicamente controla el inventario de asientos. ServicioMetricas calcula exclusivamente estadísticas y métricas de ventas.
+// ServicioCorreo: única responsabilidad = envío de correos
+public class ServicioCorreo {
+    public static void notificarCancelacionEvento(Evento ev, List<Compra> compras) { ... }
+    public static void notificarCambioEstadoEvento(Evento ev, ...) { ... }
+    // NO contiene lógica de negocio, ni reportes, ni métricas
+}
+
+// ReporteServicio: única responsabilidad = exportar reportes
+public class ReporteServicio {
+    public void exportar(AdapterGenerador adaptador, List<Map<String,Object>> datos, String ruta) {
+        adaptador.exportar(datos, ruta); // solo delega al adaptador
+    }
+}
+
+5.2 OCP – Principio Abierto/Cerrado
+Las entidades están abiertas para extensión pero cerradas para modificación. El uso de interfaces y Strategy permite agregar nuevos métodos de pago, tipos de entrada o filtros sin tocar el código existente.
+// FiltroStrategy: abierto a nuevas implementaciones
+public interface FiltroStrategy<T> {
+    List<T> filtrar(List<T> lista);
+}
+
+// Nueva implementación sin modificar código existente
+public class FiltroFechaStrategy implements FiltroStrategy<Compra> {
+    private final LocalDateTime desde, hasta;
+    @Override
+    public List<Compra> filtrar(List<Compra> lista) {
+        return lista.stream()
+            .filter(c -> !c.getFecha().isBefore(desde) && !c.getFecha().isAfter(hasta))
+            .collect(Collectors.toList());
+    }
+}
+// Para agregar FiltroCategoria, FiltroNombre, etc.,
+// solo se crea una nueva clase sin modificar nada.
+
+5.3 LSP – Principio de Sustitución de Liskov
+Las subclases pueden reemplazar a sus superclases sin alterar el comportamiento del programa. FactoryEntradaVip, FactoryEntradaPreferencial y FactoryEntradaGeneral extienden FactoryEntrada, y cualquiera puede usarse donde se espera un FactoryEntrada sin romper la lógica.
+// La clase cliente trabaja con FactoryEntrada (abstracción)
+public class ServicioCompraFacade {
+    private final FactoryEntrada creadorEntrada; // cualquier subclase
+
+    public ResultadoCompra confirmarCompra(..., Zona zona, Asiento asiento, ...) {
+        // Funciona igual con FactoryEntradaVip, General o Preferencial
+        Entrada e = creadorEntrada.crearEntrada(zona, asiento);
+        ...
+    }
+}
+
+// Sustitución transparente en tiempo de ejecución:
+FactoryEntrada factory = new FactoryEntradaVip();         // o General, o Preferencial
+ServicioCompraFacade facade = new ServicioCompraFacade(pago, factory, obs);
+
+5.4 ISP – Principio de Segregación de Interfaces
+Ninguna clase es forzada a implementar métodos que no usa. Las interfaces son pequeñas y específicas: EntradaServicioDecorator solo declara calcularPrecio() y describir(). ObserverEstado solo declara actualizar(). PagoStrategy solo declara procesar(). StateCompra separa pagar(), cancelar() y reembolsar().
+// Interfaz específica para decoradores (solo 2 métodos)
+public interface EntradaServicioDecorator {
+    double calcularPrecio();
+    String describir();
+}
+
+// Interfaz específica para observadores (solo 1 método)
+public interface ObserverEstado {
+    void actualizar(String entidad, String id,
+                    String estadoAnterior, String estadoNuevo);
+}
+
+// Cada implementación solo define lo que le concierne,
+// sin arrastrar métodos innecesarios.
+
+5.5 DIP – Principio de Inversión de Dependencias
+Los módulos de alto nivel dependen de abstracciones, no de implementaciones concretas. ServicioCompraFacade recibe PagoStrategy, FactoryEntrada y ObserverEstado como interfaces, no como clases concretas. La implementación concreta se inyecta desde fuera.
+// Alto nivel (Facade) depende de abstracciones
+public class ServicioCompraFacade {
+    private final PagoStrategy estrategiaPago;    // interfaz
+    private final FactoryEntrada creadorEntrada;  // clase abstracta
+    private final ArrayList<ObserverEstado> obs;  // interfaz
+
+    public ServicioCompraFacade(PagoStrategy pago,   // inyección
+                                FactoryEntrada factory,
+                                ArrayList<ObserverEstado> observadores) {
+        this.estrategiaPago = pago;
+        this.creadorEntrada = factory;
+        this.obs            = observadores;
+    }
+}
+
+// El consumidor elige la implementación concreta:
+new ServicioCompraFacade(
+    new PagoPSEStrategy(),           // bajo nivel reemplazable
+    new FactoryEntradaGeneral(),
+    new ArrayList<>(List.of(new ObserverNotificacion()))
+);
 
